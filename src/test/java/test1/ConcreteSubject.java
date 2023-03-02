@@ -6,7 +6,7 @@ public class ConcreteSubject implements Subject {
  
 	private String subjectState;
 	 
-	private ArrayList<Observer> observers = new ArrayList<Observer>() ;
+	protected ArrayList<Observer> observers = new ArrayList<Observer>() ;
 	 
 	public String getState() {
 		return subjectState ;

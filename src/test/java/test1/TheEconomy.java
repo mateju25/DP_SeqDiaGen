@@ -6,6 +6,11 @@ public class TheEconomy extends ConcreteSubject {
     {
         super.setState("The Price of gas is at $5.00/gal");
     }
+
+    public void attach(Observer obj) {
+        System.out.println( "Economy attaching " + obj.getClass().getName() );
+        observers.add(obj) ;
+    }
 	 
 }
 

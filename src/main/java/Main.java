@@ -23,45 +23,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class Main {
-
-    public static void main5(String[] args) {
-        TypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
-        TypeSolver javaParserTypeSolver = new JavaParserTypeSolver(new File("src/test/java"));
-//        javaParserTypeSolver.setParent(typeSolver);
-        CombinedTypeSolver combinedSolver = new CombinedTypeSolver();
-        combinedSolver.add(reflectionTypeSolver);
-        combinedSolver.add(javaParserTypeSolver);
-
-        showReferenceTypeDeclaration(combinedSolver.solveType("java.lang.Object"));
-        showReferenceTypeDeclaration(combinedSolver.solveType("java.lang.String"));
-        showReferenceTypeDeclaration(combinedSolver.solveType("java.util.List"));
-        showReferenceTypeDeclaration(javaParserTypeSolver.solveType("test1.Main"));
-    }
-
-    public static void main9(String[] args) throws Exception {
-        TypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
-        TypeSolver javaParserTypeSolver = new JavaParserTypeSolver(new File("src/test/java"));
-
-        CombinedTypeSolver combinedSolver = new CombinedTypeSolver();
-        combinedSolver.add(reflectionTypeSolver);
-        combinedSolver.add(javaParserTypeSolver);
-
-
-        JavaSymbolSolver symbolSolver = new JavaSymbolSolver(combinedSolver);
-        StaticJavaParser
-                .getParserConfiguration()
-                .setSymbolResolver(symbolSolver);
-
-        CompilationUnit cu = StaticJavaParser.parse(new File("src/test/java/test1/Main.java"));
-
-        var fields = cu.findAll(FieldDeclaration.class);
-
-        fields.forEach(f -> {
-            System.out.println("Field type: " + f.resolve().getType().asReferenceType().getQualifiedName());
-        });
-    }
-
-
     public static List<File> findJavaFiles(File directory) {
         List<File> javaFiles = new ArrayList<>();
         File[] files = directory.listFiles();
@@ -78,7 +39,7 @@ public class Main {
     }
 
     public static void main(String[] args) throws IOException {
-        List<File> javaFiles = findJavaFiles(new File("src/test/java/test1"));
+        List<File> javaFiles = findJavaFiles(new File("src/test/java/test2"));
 
         TypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
         TypeSolver javaParserTypeSolver = new JavaParserTypeSolver(new File("src/test/java"));
@@ -93,8 +54,8 @@ public class Main {
 
         for (File javaFile : javaFiles) {
             var className = javaFile.getName().replace(".java", "");
-//            if (!className.equals("Main"))
-//                continue;
+            if (!className.equals("Main"))
+                continue;
             JavaSymbolSolver symbolSolver = new JavaSymbolSolver(combinedSolver);
             StaticJavaParser
                     .getParserConfiguration()
