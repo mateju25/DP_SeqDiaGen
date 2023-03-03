@@ -94,4 +94,16 @@ public class Main {
         b.foo();
         b.foo("Hello");
     }
+
+    public static void main16() {
+        PlainConstruc b = new PlainConstruc();
+    }
+
+    public static void main17() {
+        ObjInConstruct b = new ObjInConstruct();
+    }
+
+    public static void main18() {
+        MethodInConstruc b = new MethodInConstruc();
+    }
 }

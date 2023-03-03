@@ -5,6 +5,7 @@ import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import com.github.javaparser.resolution.Navigator;
@@ -130,6 +131,24 @@ public class Main {
     }
 
     private static void parseNode(GraphNode graphNode, Node node, List<String> result) {
+        if (node instanceof ObjectCreationExpr) {
+            var className = ((ObjectCreationExpr) node).getType().resolve().describe();
+            var signature = ((ObjectCreationExpr) node).toString().replace("new ", "");
+            var route = findGraphNode(className, className + "." + signature);
+            if (route != null && route.getSequence().size() == 0) {
+                fillRoutes(route);
+            }
+            if (route != null) {
+                graphNode.addRoute(route);
+
+                result.add(graphNode.getClassName() + " -> " + className + ": " + signature);
+                result.add("activate " + className);
+                result.addAll(route.getSequence());
+                result.add(graphNode.getClassName() + " <-- " + className);
+                result.add("deactivate " + className);
+            }
+            return;
+        }
         if (node instanceof MethodCallExpr) {
             var signature = ((MethodCallExpr) node).resolve().getQualifiedSignature();
             var className = ((MethodCallExpr) node).resolve().declaringType().getQualifiedName();
