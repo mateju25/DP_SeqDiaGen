@@ -1,10 +1,11 @@
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import com.github.javaparser.resolution.Navigator;
 import com.github.javaparser.resolution.TypeSolver;
@@ -13,16 +14,23 @@ import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
+import net.sourceforge.plantuml.SourceStringReader;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main {
+    private static String ALL_TYPES = "src/test/java";
+    private static String CONCRETE_TEST = "src/test/java/test2";
+    private static String OUTPUT = "./out/";
+
+
+    private static final List<GraphNode> graphNodes = new ArrayList<>();
+
     public static List<File> findJavaFiles(File directory) {
         List<File> javaFiles = new ArrayList<>();
         File[] files = directory.listFiles();
@@ -39,90 +47,178 @@ public class Main {
     }
 
     public static void main(String[] args) throws IOException {
-        List<File> javaFiles = findJavaFiles(new File("src/test/java/test2"));
-
-        TypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
-        TypeSolver javaParserTypeSolver = new JavaParserTypeSolver(new File("src/test/java"));
+        List<File> javaFiles = findJavaFiles(new File(CONCRETE_TEST));
 
         CombinedTypeSolver combinedSolver = new CombinedTypeSolver();
-        combinedSolver.add(reflectionTypeSolver);
-        combinedSolver.add(javaParserTypeSolver);
+        combinedSolver.add(new ReflectionTypeSolver());
+        combinedSolver.add(new JavaParserTypeSolver(new File(ALL_TYPES)));
 
-//        for (File javaFile : javaFiles) {
-//            showReferenceTypeDeclaration(combinedSolver.solveType(javaFile.getName().replace(".java", "")));
-//        }
+        JavaSymbolSolver symbolSolver = new JavaSymbolSolver(combinedSolver);
+        StaticJavaParser
+                .getParserConfiguration()
+                .setSymbolResolver(symbolSolver);
 
         for (File javaFile : javaFiles) {
-            var className = javaFile.getName().replace(".java", "");
-            if (!className.equals("Main"))
-                continue;
-            JavaSymbolSolver symbolSolver = new JavaSymbolSolver(combinedSolver);
-            StaticJavaParser
-                    .getParserConfiguration()
-                    .setSymbolResolver(symbolSolver);
-
             CompilationUnit cu = StaticJavaParser.parse(javaFile);
 
-            System.out.println(cu.getClassByName(className).isPresent() ? cu.getClassByName(className).get().resolve().getQualifiedName() : cu.getInterfaceByName(className).get().resolve().getQualifiedName());
             List<ConstructorDeclaration> constructors = new ArrayList<>();
             new ConstructorCollector().visit(cu, constructors);
             constructors.forEach(method -> {
-                System.out.println("----" + method.resolve().getQualifiedSignature());
-                var methodCalls = getContructorCalls(method);
-                printMethods(className, cu, methodCalls);
+                graphNodes.add(new GraphNode(getNameOfClass(method.resolve().getQualifiedSignature()), method.resolve().getQualifiedSignature(), method.getBody()));
             });
 
             List<MethodDeclaration> methods = new ArrayList<>();
             new MethodCollector().visit(cu, methods);
             methods.forEach(method -> {
-                System.out.println("----" + method.resolve().getQualifiedSignature());
-                var methodCalls = getMethodCalls(method);
-                printMethods(className, cu, methodCalls);
+                graphNodes.add(new GraphNode(getNameOfClass(method.resolve().getQualifiedSignature()), method.resolve().getQualifiedSignature(), method.getBody().orElse(null)));
             });
         }
-    }
 
-    private static void printMethods(String className, CompilationUnit cu, List<String> methodCalls) {
-        if (!methodCalls.isEmpty()) {
-            List<FieldDeclaration> fields = new ArrayList<>();
-            new FieldCollector().visit(cu, fields);
+        graphNodes.forEach(Main::fillRoutes);
 
-            methodCalls.forEach(methodCall -> {
-                if (methodCall.startsWith("super(")) {
-                    System.out.println("--------" + methodCall.replace("super", cu.getClassByName(className).get().getExtendedTypes().get(0).resolve().asReferenceType().getQualifiedName()));
-                    return;
+        graphNodes.forEach(g -> {
+            if (g.getSequence().size() > 0) {
+                var diagram = makeSequenceDiagram(g);
+//                System.out.println(diagram);
+
+                SourceStringReader reader = new SourceStringReader(diagram);
+                File png = new File(OUTPUT + (g.getMethodName()).replace(".", "_") + ".png");
+                try {
+                    reader.generateImage(png);
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-                System.out.println("--------" + methodCall);
-            });
+            }
+        });
+    }
+
+    private static String makeSequenceDiagram(GraphNode g) {
+        StringBuilder sb = new StringBuilder();
+        Map<String, Integer> participants = new HashMap<>();
+
+        sb.append("title ").append(g.getClassName()).append(".").append(g.getMethodName()).append("\n");
+        g.getSequence().add(0, "activate " + g.getClassName());
+        g.getSequence().add(g.getSequence().size() - 1, "deactivate " + g.getClassName());
+        g.getSequence().forEach(s -> {
+            if (s.contains("->")) {
+                var left = s.split("->")[1].split(":")[0].trim();
+                if (!participants.containsKey(left)) {
+                    participants.put(left, 1);
+                } else {
+                    participants.put(left, participants.get(left) + 1);
+                }
+            }
+            sb.append(s).append("\n");
+        });
+        sb.append("@enduml\n");
+        //order participants base on integer
+        var orderedParticipants = participants.entrySet().stream().sorted(Map.Entry.comparingByValue()).collect(Collectors.toList());
+        Collections.reverse(orderedParticipants);
+//        orderedParticipants.forEach(p -> sb.insert(0, "participant " + p.getKey() + "\n"));
+//        sb.insert(0, "participant " + g.getClassName() + "\n");
+        sb.insert(0, "@startuml\n");
+        return sb.toString();
+    }
+
+    private static String getNameOfClass(String methodSignature) {
+        var left = methodSignature.split("\\(")[0];
+        return left.substring(0, left.lastIndexOf("."));
+    }
+
+    private static GraphNode findGraphNode(String className, String signature) {
+        return graphNodes.stream().filter(g -> g.getClassName().equals(className) && g.getMethodName().equals(signature)).findFirst().orElse(null);
+    }
+
+    private static void parseNode(GraphNode graphNode, Node node, List<String> result) {
+        if (node instanceof MethodCallExpr) {
+            var signature = ((MethodCallExpr) node).resolve().getQualifiedSignature();
+            var className = ((MethodCallExpr) node).resolve().declaringType().getQualifiedName();
+            var route = findGraphNode(className, signature);
+            if (route != null)
+                graphNode.addRoute(route);
+
+            //recursive call
+            if (className.equals(graphNode.getClassName()) && signature.equals(graphNode.getMethodName())) {
+
+                result.add(graphNode.getClassName() + " -> " + graphNode.getClassName() + ": " + signature);
+                result.add("activate " + graphNode.getClassName());
+                result.add("deactivate " + graphNode.getClassName());
+                return;
+            }
+
+            //own call
+            if (className.equals(graphNode.getClassName())) {
+                result.add(graphNode.getClassName() + " -> " + graphNode.getClassName() + ": " + signature);
+                if (route != null && route.getSequence().size() == 0) {
+                    fillRoutes(route);
+                }
+                if (route != null)
+                    result.addAll(route.getSequence());
+                return;
+            }
+
+            result.add(graphNode.getClassName() + " -> " + className + ": " + signature);
+            result.add("activate " + className);
+            if (route != null && route.getSequence().size() == 0) {
+                fillRoutes(route);
+            }
+            if (route != null)
+                result.addAll(route.getSequence());
+            else
+                if (node.findAll(MethodCallExpr.class).size() > 0)
+                    node.getChildNodes().forEach(child -> parseNode(graphNode, child, result));
+            result.add(graphNode.getClassName() + " <-- " + className);
+            result.add("deactivate " + className);
+            return;
         }
+        if (node instanceof IfStmt) {
+            IfStmt ifStmt = (IfStmt) node;
+            if (ifStmt.getThenStmt() != null) {
+                result.add("alt " + ifStmt.getCondition().toString());
+                parseNode(graphNode, ifStmt.getThenStmt(), result);
+            }
+            if (ifStmt.getElseStmt().isPresent()) {
+                result.add("else");
+                parseNode(graphNode, ifStmt.getElseStmt().orElse(null), result);
+            }
+            result.add("end");
+            return;
+        }
+        if (node instanceof ForStmt) {
+            ForStmt forStmt = (ForStmt) node;
+            result.add("loop " + forStmt.getInitialization().get(0).toString() + ";" + forStmt.getCompare().get().toString() + ";" + forStmt.getUpdate().get(0).toString());
+            parseNode(graphNode, forStmt.getBody(), result);
+            result.add("end");
+            return;
+        }
+        if (node instanceof ForEachStmt) {
+            ForEachStmt forStmt = (ForEachStmt) node;
+            result.add("loop " + forStmt.getIterable().toString());
+            parseNode(graphNode, forStmt.getBody(), result);
+            result.add("end");
+            return;
+        }
+        if (node instanceof WhileStmt) {
+            WhileStmt whileStmt = (WhileStmt) node;
+            result.add("loop " + whileStmt.getCondition().toString());
+            parseNode(graphNode, whileStmt.getBody(), result);
+            result.add("end");
+            return;
+        }
+        node.getChildNodes().forEach(child -> parseNode(graphNode, child, result));
     }
 
 
-    private static List<String> getMethodCalls(MethodDeclaration method) {
+    private static void fillRoutes(GraphNode graphNode) {
+        if (graphNode.getSequence().size() > 0)
+            return;
         List<String> methodCalls = new ArrayList<>();
-        method.findAll(MethodCallExpr.class).forEach(methodCall -> {
-            methodCalls.add(methodCall.resolve().getQualifiedSignature());
+        if (graphNode.getBlockStmt() == null)
+            return;
+        graphNode.getBlockStmt().getChildNodes().forEach(node -> {
+            parseNode(graphNode, node, methodCalls);
         });
-        return methodCalls;
-    }
-
-    private static List<String> getContructorCalls(ConstructorDeclaration constructor) {
-        List<String> methodCalls = new ArrayList<>();
-        constructor.findAll(ConstructorDeclaration.class).forEach(methodCall -> {
-            if (methodCall.findAll(BlockStmt.class).get(0).toString().contains("super")) {
-                methodCalls.add("super(" + methodCall.getParameters().stream().map(p -> p.getType().asString()).collect(Collectors.joining(",")) + ")");
-                return;
-            }
-            if (methodCall.findAll(BlockStmt.class).get(0).toString().contains("this")) {
-                methodCalls.add("this(" + methodCall.getParameters().stream().map(p -> p.getType().asString()).collect(Collectors.joining(",")) + ")");
-                return;
-            }
-            methodCalls.add(methodCall.resolve().getQualifiedSignature());
-        });
-        constructor.findAll(MethodCallExpr.class).forEach(methodCall -> {
-            methodCalls.add(methodCall.resolve().getQualifiedSignature());
-        });
-        return methodCalls;
+        graphNode.setSequence(methodCalls);
     }
 
     private static class FieldCollector extends VoidVisitorAdapter<List<FieldDeclaration>> {

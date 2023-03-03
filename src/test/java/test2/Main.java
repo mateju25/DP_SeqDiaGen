@@ -2,7 +2,7 @@ package test2;
 
 public class Main {
 
-    public static void main() {
+    public static void main0() {
         Integer i = 1;
         System.out.println(i);
     }
@@ -12,8 +12,12 @@ public class Main {
         System.out.println(i.getClass().getName());
     }
 
+    private static Integer generateInt() {
+        return 1;
+    }
+
     public static void main2() {
-        Integer i = 1;
+        Integer i = generateInt();
         if (i > 0)
             System.out.println(i.getClass().getName());
     }
@@ -39,23 +43,15 @@ public class Main {
         }
     }
 
-    public static void main6() {
-        var i = 0;
-        while (i < 10) {
-            System.out.println("Not infinite loop");
-            i++;
-        }
-    }
-
-    private static void recursive(int i) {
+    private static void main6(int i) {
         if (i < 5) {
             System.out.println(i);
-            recursive(i + 1);
+            main6(i + 1);
         }
     }
 
     public static void main7() {
-        recursive(0);
+        main6(0);
     }
 
     public static void main8() {
@@ -91,5 +87,11 @@ public class Main {
     public static void main14() {
         Overrid b = new Overrid();
         b.foo();
+    }
+
+    public static void main15() {
+        Base b = new Base();
+        b.foo();
+        b.foo("Hello");
     }
 }

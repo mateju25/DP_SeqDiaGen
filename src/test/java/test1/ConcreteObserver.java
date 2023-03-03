@@ -8,6 +8,7 @@ public class  ConcreteObserver implements Observer {
     public ConcreteObserver( ConcreteSubject theSubject )
     {
         this.subject = theSubject ;
+        System.out.println( "ConcreteObserver: " + this.getClass().getName() + " created" );
     }
     
 	public void update() {
