@@ -4,15 +4,19 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import com.github.javaparser.resolution.Navigator;
 import com.github.javaparser.resolution.TypeSolver;
+import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
+import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import net.sourceforge.plantuml.SourceStringReader;
@@ -20,14 +24,15 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main {
-    private static String ALL_TYPES = "src/test/java";
-    private static String CONCRETE_TEST = "src/test/java/test2";
-    private static String OUTPUT = "./out/";
+    private static String LIBS = "./libs";
+    private static String CONCRETE_TEST = "src/test3/java";
+    private static String OUTPUT = "./out3/";
 
 
     private static final List<GraphNode> graphNodes = new ArrayList<>();
@@ -47,12 +52,36 @@ public class Main {
         return javaFiles;
     }
 
+    public static List<File> findJarFiles(File directory) {
+        List<File> javaFiles = new ArrayList<>();
+        File[] files = directory.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    javaFiles.addAll(findJarFiles(file));
+                } else if (file.getName().endsWith(".jar")) {
+                    javaFiles.add(file);
+                }
+            }
+        }
+        return javaFiles;
+    }
+
     public static void main(String[] args) throws IOException {
         List<File> javaFiles = findJavaFiles(new File(CONCRETE_TEST));
+        List<File> jarFiles = findJarFiles(new File(LIBS));
 
         CombinedTypeSolver combinedSolver = new CombinedTypeSolver();
         combinedSolver.add(new ReflectionTypeSolver());
-        combinedSolver.add(new JavaParserTypeSolver(new File(ALL_TYPES)));
+        combinedSolver.add(new JavaParserTypeSolver(new File(CONCRETE_TEST)));
+        jarFiles.forEach(jarFile -> {
+            try {
+                combinedSolver.add(new JarTypeSolver(jarFile));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+
 
         JavaSymbolSolver symbolSolver = new JavaSymbolSolver(combinedSolver);
         StaticJavaParser
@@ -61,6 +90,11 @@ public class Main {
 
         for (File javaFile : javaFiles) {
             CompilationUnit cu = StaticJavaParser.parse(javaFile);
+
+            List<FieldDeclaration> fields = new ArrayList<>();
+            cu.getClassByName(javaFile.getName().replace(".java", "")).ifPresent(clazz -> {
+                new FieldCollector().visit(clazz, fields);
+            });
 
             List<ConstructorDeclaration> constructors = new ArrayList<>();
             new ConstructorCollector().visit(cu, constructors);
@@ -74,7 +108,6 @@ public class Main {
                 graphNodes.add(new GraphNode(getNameOfClass(method.resolve().getQualifiedSignature()), method.resolve().getQualifiedSignature(), method.getBody().orElse(null)));
             });
         }
-
         graphNodes.forEach(Main::fillRoutes);
 
         graphNodes.forEach(g -> {
@@ -83,7 +116,7 @@ public class Main {
 //                System.out.println(diagram);
 
                 SourceStringReader reader = new SourceStringReader(diagram);
-                File png = new File(OUTPUT + (g.getMethodName()).replace(".", "_") + ".png");
+                File png = new File(OUTPUT + (g.getClassName()).replaceAll("[.<>() ?]", "_") + "_" + graphNodes.indexOf(g) + ".png");
                 try {
                     reader.generateImage(png);
                 } catch (IOException e) {
@@ -97,9 +130,8 @@ public class Main {
         StringBuilder sb = new StringBuilder();
         Map<String, Integer> participants = new HashMap<>();
 
-        sb.append("title ").append(g.getClassName()).append(".").append(g.getMethodName()).append("\n");
+        sb.append("title ").append(g.getMethodName()).append("\n");
         g.getSequence().add(0, "activate " + g.getClassName());
-        g.getSequence().add(g.getSequence().size() - 1, "deactivate " + g.getClassName());
         g.getSequence().forEach(s -> {
             if (s.contains("->")) {
                 var left = s.split("->")[1].split(":")[0].trim();
@@ -111,6 +143,7 @@ public class Main {
             }
             sb.append(s).append("\n");
         });
+        sb.append("deactivate ").append(g.getClassName()).append("\n");
         sb.append("@enduml\n");
         //order participants base on integer
         var orderedParticipants = participants.entrySet().stream().sorted(Map.Entry.comparingByValue()).collect(Collectors.toList());
@@ -132,8 +165,14 @@ public class Main {
 
     private static void parseNode(GraphNode graphNode, Node node, List<String> result) {
         if (node instanceof ObjectCreationExpr) {
-            var className = ((ObjectCreationExpr) node).getType().resolve().describe();
-            var signature = ((ObjectCreationExpr) node).toString().replace("new ", "");
+            String signature = "";
+            String className = "";
+            try {
+                className = ((ObjectCreationExpr) node).getType().resolve().describe();
+                signature = ((ObjectCreationExpr) node).toString().replace("new ", "");
+            } catch (UnsolvedSymbolException e) {
+                return;
+            }
             var route = findGraphNode(className, className + "." + signature);
             if (route != null && route.getSequence().size() == 0) {
                 fillRoutes(route);
@@ -150,8 +189,14 @@ public class Main {
             return;
         }
         if (node instanceof MethodCallExpr) {
-            var signature = ((MethodCallExpr) node).resolve().getQualifiedSignature();
-            var className = ((MethodCallExpr) node).resolve().declaringType().getQualifiedName();
+            String signature = "";
+            String className = "";
+            try {
+                signature = ((MethodCallExpr) node).resolve().getQualifiedSignature();
+                className = ((MethodCallExpr) node).resolve().declaringType().getQualifiedName();
+            } catch (UnsolvedSymbolException e) {
+                return;
+            }
             var route = findGraphNode(className, signature);
             if (route != null)
                 graphNode.addRoute(route);
@@ -183,9 +228,13 @@ public class Main {
             }
             if (route != null)
                 result.addAll(route.getSequence());
-            else
+            else if (node.findAll(LambdaExpr.class).size() > 0) {
+                var newNode = new GraphNode(className, signature, null);
+                node.getChildNodes().forEach(child -> parseNode(newNode, child, result));
+            } else {
                 if (node.findAll(MethodCallExpr.class).size() > 0)
                     node.getChildNodes().forEach(child -> parseNode(graphNode, child, result));
+            }
             result.add(graphNode.getClassName() + " <-- " + className);
             result.add("deactivate " + className);
             return;
@@ -193,7 +242,7 @@ public class Main {
         if (node instanceof IfStmt) {
             IfStmt ifStmt = (IfStmt) node;
             if (ifStmt.getThenStmt() != null) {
-                result.add("alt " + ifStmt.getCondition().toString());
+                result.add("alt " + ifStmt.getCondition().toString().replaceAll("[\r\n]", ""));
                 parseNode(graphNode, ifStmt.getThenStmt(), result);
             }
             if (ifStmt.getElseStmt().isPresent()) {

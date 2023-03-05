@@ -1,0 +1,15 @@
+<component name="libraryTable">
+  <library name="org.openjfx:javafx-swing:11.0.2" type="repository">
+    <properties maven-id="org.openjfx:javafx-swing:11.0.2" />
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/libs/javafx-swing-11.0.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/libs/javafx-swing-11.0.2-win.jar!/" />
+      <root url="jar://$PROJECT_DIR$/libs/javafx-graphics-11.0.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/libs/javafx-graphics-11.0.2-win.jar!/" />
+      <root url="jar://$PROJECT_DIR$/libs/javafx-base-11.0.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/libs/javafx-base-11.0.2-win.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
