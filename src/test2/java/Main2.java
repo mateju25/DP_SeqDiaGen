@@ -106,4 +106,12 @@ public class Main2 {
     public static void main18() {
         MethodInConstruc b = new MethodInConstruc();
     }
+
+    public static Base h = new Overrid();
+
+    public static void main19() {
+        var b = new Polymorph();
+        b.tmp(new Overrid());
+        b.tmp(h);
+    }
 }
